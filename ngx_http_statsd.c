@@ -18,7 +18,7 @@
 #define STATSD_TYPE_COUNTER	0x0001
 #define STATSD_TYPE_TIMING  0x0002
 
-#define STATSD_MAX_STR 256
+#define STATSD_MAX_STR 1432
 
 #define ngx_conf_merge_ptr_value(conf, prev, default)            		\
  	if (conf == NGX_CONF_UNSET_PTR) {                               	\
@@ -235,7 +235,8 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    line[STATSD_MAX_STR], *p;
+    u_char                    startline[STATSD_MAX_STR], *p, *line;
+    size_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
 	ngx_statsd_stat_t 		 *stats;
@@ -262,6 +263,8 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 	}
 
 	stats = ulcf->stats->elts;
+	line = startline;
+	togo = STATSD_MAX_STR;
 	for (c = 0; c < ulcf->stats->nelts; c++) {
 
 		stat = stats[c];
@@ -287,12 +290,25 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 
 		if (metric_type) {
 			if (ulcf->sample_rate < 100) {
-				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|@0.%02d", &s, n, metric_type, ulcf->sample_rate);
+				p = ngx_snprintf(line, togo, "%V:%d|%s|@0.%02d\n", &s, n, metric_type, ulcf->sample_rate);
 			} else {
-				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s", &s, n, metric_type);
+				p = ngx_snprintf(line, togo, "%V:%d|%s\n", &s, n, metric_type);
 			}
-			ngx_http_statsd_udp_send(ulcf->endpoint, line, p - line);
+			if (p - line >= togo) {
+				if (line != startline) {
+					ngx_http_statsd_udp_send(ulcf->endpoint, startline, line - startline - sizeof(char));
+					c--;
+				}
+				line = startline;
+				togo = STATSD_MAX_STR;
+			} else {
+				togo -= p - line;
+				line = p;
+			}
 		}
+	}
+	if (togo < STATSD_MAX_STR) {
+		ngx_http_statsd_udp_send(ulcf->endpoint, startline, line - startline - sizeof(char));
 	}
 
     return NGX_OK;
@@ -357,6 +373,9 @@ ngx_http_statsd_udp_send(ngx_udp_endpoint_t *l, u_char *buf, size_t len)
     ngx_resolver_connection_t  *rec;
 
     rec = l->udp_connection;
+    if (!rec) {
+        return NGX_ERROR;
+    }
     if (rec->udp == NULL) {
 
         rec->log = *l->log;
