@@ -8,6 +8,13 @@
  *
  * Copyright (C) 2010 Valery Kholodkov
 */
+
+//todo
+// parse tags for any errors, i.e. starting with a letter, commas, colons
+// add main tags with metric specific tags
+// add tags into stat string
+// test changes...
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
@@ -17,7 +24,7 @@
 
 #define STATSD_TYPE_COUNTER	  0x0001
 #define STATSD_TYPE_TIMING    0x0002
-#define STATSD_TYPE_GAUGE	    0x0003
+#define STATSD_TYPE_GAUGE	  0x0003
 #define STATSD_TYPE_HISTOGRAM 0x0004
 #define STATSD_TYPE_SET	      0x0005
 
@@ -50,16 +57,19 @@ typedef struct {
 	ngx_str_t			   		key;
 	ngx_uint_t			   		metric;
 	ngx_flag_t					valid;
+	ngx_str_t                   tags;
 
 	ngx_http_complex_value_t 	*ckey;
 	ngx_http_complex_value_t 	*cmetric;
 	ngx_http_complex_value_t	*cvalid;
+	ngx_http_complex_value_t    *ctags;
 } ngx_statsd_stat_t;
 
 typedef struct {
     int	                    off;
     ngx_udp_endpoint_t      *endpoint;
 	ngx_uint_t				sample_rate;
+    ngx_str_t               tags;
 	ngx_array_t				*stats;
 } ngx_http_statsd_conf_t;
 
@@ -83,6 +93,8 @@ static char *ngx_http_statsd_add_set(ngx_conf_t *cf, ngx_command_t *cmd, void *c
 
 static ngx_str_t ngx_http_statsd_key_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_str_t v);
 static ngx_str_t ngx_http_statsd_key_value(ngx_str_t *str);
+static ngx_str_t ngx_http_statsd_tags_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_str_t v);
+static ngx_str_t ngx_http_statsd_tags_value(ngx_str_t *str);
 static ngx_uint_t ngx_http_statsd_metric_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_uint_t v);
 static ngx_uint_t ngx_http_statsd_metric_value(ngx_str_t *str);
 static ngx_flag_t ngx_http_statsd_valid_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_flag_t v);
@@ -110,41 +122,41 @@ static ngx_command_t  ngx_http_statsd_commands[] = {
 
   { ngx_string("statsd_tags"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-	  ngx_http_statsd_add_tags,
+	  ngx_conf_set_str_slot,
 	  NGX_HTTP_LOC_CONF_OFFSET,
-	  0,
+	  offsetof(ngx_http_statsd_conf_t, tags),
 	  NULL },
 
 	{ ngx_string("statsd_count"),
-	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23|NGX_CONF_TAKE4,
 	  ngx_http_statsd_add_count,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  0,
 	  NULL },
 
 	{ ngx_string("statsd_timing"),
-	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23|NGX_CONF_TAKE4,
 	  ngx_http_statsd_add_timing,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  0,
 	  NULL },
 
   { ngx_string("statsd_gauge"),
-	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23|NGX_CONF_TAKE4,
 	  ngx_http_statsd_add_gauge,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  0,
 	  NULL },
 
   { ngx_string("statsd_histogram"),
-	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23|NGX_CONF_TAKE4,
 	  ngx_http_statsd_add_histogram,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  0,
 	  NULL },
 
   { ngx_string("statsd_set"),
-	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23,
+	  NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_TAKE23|NGX_CONF_TAKE4,
 	  ngx_http_statsd_add_set,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  0,
@@ -201,6 +213,27 @@ ngx_http_statsd_key_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *c
 
 static ngx_str_t
 ngx_http_statsd_key_value(ngx_str_t *value)
+{
+	return *value;
+};
+
+static ngx_str_t
+ngx_http_statsd_tags_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_str_t v)
+{
+	ngx_str_t val;
+	if (cv == NULL) {
+		return v;
+	}
+
+	if (ngx_http_complex_value(r, cv, &val) != NGX_OK) {
+		return (ngx_str_t) ngx_null_string;
+	};
+
+	return ngx_http_statsd_tags_value(&val);
+};
+
+static ngx_str_t
+ngx_http_statsd_tags_value(ngx_str_t *value)
 {
 	return *value;
 };
@@ -279,6 +312,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 	ngx_uint_t				  n;
 	ngx_str_t				  s;
 	ngx_flag_t				  b;
+	ngx_str_t				  mtags;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http statsd handler");
@@ -303,6 +337,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 
 		stat = stats[c];
 		s = ngx_http_statsd_key_get_value(r, stat.ckey, stat.key);
+		mtags = ngx_http_statsd_tags_get_value(r, stat.ctags, stat.tags);
 		ngx_escape_statsd_key(s.data, s.data, s.len);
 
 		n = ngx_http_statsd_metric_get_value(r, stat.cmetric, stat.metric);
@@ -318,11 +353,11 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 			metric_type = "c";
 		} else if (stat.type == STATSD_TYPE_TIMING) {
 			metric_type = "ms";
-    } else if (stat.type == STATSD_TYPE_GAUGE) {
-			metric_type = "g";
-    } else if (stat.type == STATSD_TYPE_HISTOGRAM) {
-			metric_type = "h";
-    } else if (stat.type == STATSD_TYPE_SET) {
+        } else if (stat.type == STATSD_TYPE_GAUGE) {
+            metric_type = "g";
+        } else if (stat.type == STATSD_TYPE_HISTOGRAM) {
+            metric_type = "h";
+        } else if (stat.type == STATSD_TYPE_SET) {
 			metric_type = "s";
 		} else {
 			metric_type = NULL;
@@ -480,6 +515,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
+	conf->tags = NULL;
 	conf->stats = NULL;
 
     return conf;
@@ -592,6 +628,8 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
     ngx_http_statsd_conf_t      		*ulcf = conf;
 	ngx_http_complex_value_t			key_cv;
 	ngx_http_compile_complex_value_t    key_ccv;
+    ngx_http_complex_value_t			tags_cv;
+    ngx_http_compile_complex_value_t    tags_ccv;
 	ngx_http_complex_value_t			metric_cv;
 	ngx_http_compile_complex_value_t    metric_ccv;
 	ngx_http_complex_value_t			valid_cv;
@@ -669,30 +707,106 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 		*stat->cmetric = metric_cv;
 	}
 
-	if (cf->args->nelts > 3) {
-		ngx_memzero(&valid_ccv, sizeof(ngx_http_compile_complex_value_t));
-		valid_ccv.cf = cf;
-		valid_ccv.value = &value[3];
-		valid_ccv.complex_value = &valid_cv;
+	if (cf->args->nelts == 4) {
+	    if (ngx_strcmp(value[3].data[0], "#") != 0) {
+            ngx_memzero(&valid_ccv, sizeof(ngx_http_compile_complex_value_t));
+            valid_ccv.cf = cf;
+            valid_ccv.value = &value[3];
+            valid_ccv.complex_value = &valid_cv;
 
-		if (ngx_http_compile_complex_value(&valid_ccv) != NGX_OK) {
-			return NGX_CONF_ERROR;
-		}
+            if (ngx_http_compile_complex_value(&valid_ccv) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
 
-		if (valid_cv.lengths == NULL) {
-			b = ngx_http_statsd_valid_value(&value[3]);
-			if (b < 0) {
-				ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[3]);
-				return NGX_CONF_ERROR;
-			};
-			stat->valid = (ngx_flag_t) b;
-		} else {
-			stat->cvalid = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
-			if (stat->cvalid == NULL) {
-				return NGX_CONF_ERROR;
-			}
-			*stat->cvalid = valid_cv;
-		}
+            if (valid_cv.lengths == NULL) {
+                b = ngx_http_statsd_valid_value(&value[3]);
+                if (b < 0) {
+                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[3]);
+                    return NGX_CONF_ERROR;
+                };
+                stat->valid = (ngx_flag_t) b;
+            } else {
+                stat->cvalid = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+                if (stat->cvalid == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+                *stat->cvalid = valid_cv;
+            }
+	    } else {
+            ngx_memzero(&tags_ccv, sizeof(ngx_http_compile_complex_value_t));
+            tags_ccv.cf = cf;
+            tags_ccv.value = &value[3];
+            tags_ccv.complex_value = &tags_cv;
+
+            if (ngx_http_compile_complex_value(&tags_ccv) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+
+            if (key_cv.lengths == NULL) {
+                s = ngx_http_statsd_key_value(&value[1]);
+                /*if (n < 0) {
+                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[2]);
+                    return NGX_CONF_ERROR;
+                };*/
+                stat->key = (ngx_str_t) s;
+            } else {
+                stat->ckey = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+                if (stat->ckey == NULL) {
+                    return NGX_CONF_ERROR;
+                }
+                *stat->ckey = key_cv;
+            }
+	    }
+
+	if (cf->args->nelts == 5) {
+        ngx_memzero(&valid_ccv, sizeof(ngx_http_compile_complex_value_t));
+        valid_ccv.cf = cf;
+        valid_ccv.value = &value[3];
+        valid_ccv.complex_value = &valid_cv;
+
+        if (ngx_http_compile_complex_value(&valid_ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (valid_cv.lengths == NULL) {
+            b = ngx_http_statsd_valid_value(&value[3]);
+            if (b < 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[3]);
+                return NGX_CONF_ERROR;
+            };
+            stat->valid = (ngx_flag_t) b;
+        } else {
+            stat->cvalid = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+            if (stat->cvalid == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            *stat->cvalid = valid_cv;
+        }
+
+        ngx_memzero(&tags_ccv, sizeof(ngx_http_compile_complex_value_t));
+        tags_ccv.cf = cf;
+        tags_ccv.value = &value[1];
+        tags_ccv.complex_value = &tags_cv;
+
+        if (ngx_http_compile_complex_value(&tags_ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (key_cv.lengths == NULL) {
+            s = ngx_http_statsd_key_value(&value[1]);
+            /*if (n < 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[2]);
+                return NGX_CONF_ERROR;
+            };*/
+            stat->key = (ngx_str_t) s;
+        } else {
+            stat->ckey = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+            if (stat->ckey == NULL) {
+                return NGX_CONF_ERROR;
+            }
+            *stat->ckey = key_cv;
+        }
+
 	}
 
 	return NGX_CONF_OK;
