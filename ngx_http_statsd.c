@@ -10,7 +10,6 @@
 */
 
 //todo
-// parse tags for any errors, i.e. starting with a letter, commas, colons
 // add main tags with metric specific tags
 // add tags into stat string
 // test changes...
@@ -84,6 +83,7 @@ static char *ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
 
 static char *ngx_http_statsd_set_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char *ngx_conf_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uint_t type);
 static char *ngx_http_statsd_add_count(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_statsd_add_timing(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -122,7 +122,7 @@ static ngx_command_t  ngx_http_statsd_commands[] = {
 
   { ngx_string("statsd_tags"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-	  ngx_conf_set_str_slot,
+	  ngx_conf_statsd_set_tags,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  offsetof(ngx_http_statsd_conf_t, tags),
 	  NULL },
@@ -302,7 +302,7 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    startline[STATSD_MAX_STR], *p, *line;
+    u_char                    startline[STATSD_MAX_STR], *p, *line, *etc, *tags, *sample_rate;
     size_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
@@ -344,7 +344,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 		b = ngx_http_statsd_valid_get_value(r, stat.cvalid, stat.valid);
 
 		if (b == 0 || s.len == 0 || n <= 0) {
-			// Do not log if not valid, key is invalid, or valud is lte 0.
+			// Do not log if not valid, key is invalid, or value is lte 0.
 			ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "statsd: no value to send");
          	continue;
 		};
@@ -363,12 +363,31 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 			metric_type = NULL;
 		}
 
+        "%V:%d|%s%s" + "|@0.%02d" + "|%s" + "\n"
+
+
+        "%V:%d|%s|@0.%02d\n"
+        "%V:%d|%s\n"
+        "%V:%d|%s\n"
+        "%V:%d|%s|@0.%02d|%s\n"
+
 		if (metric_type) {
 			if (ulcf->sample_rate < 100) {
-				p = ngx_snprintf(line, togo, "%V:%d|%s|@0.%02d\n", &s, n, metric_type, ulcf->sample_rate);
+				sample_rate = ngx_snprintf("|@0.%02d\n", ulcf->sample_rate);
 			} else {
-				p = ngx_snprintf(line, togo, "%V:%d|%s\n", &s, n, metric_type);
+			    sample_rate = "";
 			}
+			if (mtags && ulcf->tags) {
+			    tags = ngx_snprintf("|%V,%V", mtags, ulcf->tags);
+			} else if (!mtags && ulcf->tags) {
+			    tags = ngx_snprintf("|#%V", ulcf->tags);
+			} else if (mtags && !ulcf->tags) {
+			   tags = ngx_snprintf("|%V", mtags);
+			} else {
+			    tags = "";
+			}
+			etc = ngx_snprintf("%s%s", sample_rate, tags);
+			p = ngx_snprintf(line, togo, "%V:%d|%s%s\n", &s, n, metric_type, etc);
 			if (p - line >= togo) {
 				if (line != startline) {
 					ngx_http_statsd_udp_send(ulcf->endpoint, startline, line - startline - sizeof(char));
@@ -533,6 +552,7 @@ ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 	ngx_uint_t				sz;
 
 	ngx_conf_merge_ptr_value(conf->endpoint, prev->endpoint, NULL);
+	ngx_conf_merge_ptr_value(conf->tags, prev->tags, NULL);
 	ngx_conf_merge_off_value(conf->off, prev->off, 1);
 	ngx_conf_merge_uint_value(conf->sample_rate, prev->sample_rate, 100);
 
@@ -553,8 +573,10 @@ ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 
 			stat->type = prev_stat.type;
 			stat->key = prev_stat.key;
+			stat->tags = prev_stat.tags;
 			stat->metric = prev_stat.metric;
 			stat->ckey = prev_stat.ckey;
+			stat->ctags = prev_stat.ctags;
 			stat->cmetric = prev_stat.cmetric;
 			stat->valid = prev_stat.valid;
 			stat->cvalid = prev_stat.cvalid;
@@ -624,6 +646,68 @@ ngx_http_statsd_set_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 static char *
+ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+
+     char  *p = conf;
+
+     ngx_str_t        *field, *value;
+     ngx_conf_post_t  *post;
+
+     field = (ngx_str_t *) (p + cmd->offset);
+
+    if (field->data) {
+         return "is duplicate";
+     }
+
+    value = cf->args->elts;
+
+    comma = value[1].data;
+
+    for (;;) {
+        if (comma != NULL) {
+
+            if (ngx_strcmp(comma, (u_char *) ",") == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Dangling comma at end of tags: \"%V\"", value[1].data);
+                return NGX_CONF_ERROR;
+            }
+
+            nc = 0;
+
+            for (c = 'A'; c < 'Z' + 1; c++) {
+                if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c) {
+                    comma = (u_char *) ngx_strchr(comma, c);
+                    nc = 1;
+                    break;
+                }
+
+            }
+
+            if (nc == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "First letter of tag must be a letter: \"%V\"", value[1].data);
+                return NGX_CONF_ERROR;
+            }
+
+
+            comma = (u_char *) ngx_strchr(comma, ',');
+
+        } else {
+            break;
+        }
+    }
+
+     *field = value[1];
+
+     if (cmd->post) {
+         post = cmd->post;
+         return post->post_handler(cf, post, field);
+    }
+
+     return NGX_CONF_OK;
+
+}
+
+static char *
 ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uint_t type) {
     ngx_http_statsd_conf_t      		*ulcf = conf;
 	ngx_http_complex_value_t			key_cv;
@@ -638,7 +722,9 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 	ngx_statsd_stat_t 					*stat;
 	ngx_int_t							n;
 	ngx_str_t							s;
-	ngx_flag_t							b;
+	ngx_flag_t							b, nc;
+	ngx_str_t							t;
+	u_char                              *p, c;
 
     value = cf->args->elts;
 
@@ -708,7 +794,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 	}
 
 	if (cf->args->nelts == 4) {
-	    if (ngx_strcmp(value[3].data[0], "#") != 0) {
+	    if (ngx_strncmp(value[3].data, "#", 1) != 0) {
             ngx_memzero(&valid_ccv, sizeof(ngx_http_compile_complex_value_t));
             valid_ccv.cf = cf;
             valid_ccv.value = &value[3];
@@ -742,19 +828,50 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
                 return NGX_CONF_ERROR;
             }
 
-            if (key_cv.lengths == NULL) {
-                s = ngx_http_statsd_key_value(&value[1]);
-                /*if (n < 0) {
-                    ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[2]);
-                    return NGX_CONF_ERROR;
-                };*/
-                stat->key = (ngx_str_t) s;
+            if (tags_cv.lengths == NULL) {
+                t = ngx_http_statsd_tags_value(&value[3]);
+
+                comma = (u_char *) t;
+
+                for (;;) {
+                    if (comma != NULL) {
+
+                        if (ngx_strcmp(comma, (u_char *) ",") == 0) {
+                            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Dangling comma at end of tags: \"%V\"", &value[3]);
+                            return NGX_CONF_ERROR;
+                        }
+
+                        nc = 0;
+
+                        for (c = 'A'; c < 'Z' + 1; c++) {
+                            if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c) {
+                                comma = (u_char *) ngx_strchr(comma, c);
+                                nc = 1;
+                                break;
+                            }
+
+                        }
+
+                        if (nc == 0) {
+                            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "First letter of tag must be a letter: \"%V\"", &value[3]);
+                            return NGX_CONF_ERROR;
+                        }
+
+
+                        comma = (u_char *) ngx_strchr(comma, ',');
+
+                    } else {
+                        break;
+                    }
+                }
+
+                stat->tags = (ngx_str_t) t;
             } else {
-                stat->ckey = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
-                if (stat->ckey == NULL) {
+                stat->ctags = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+                if (stat->ctags == NULL) {
                     return NGX_CONF_ERROR;
                 }
-                *stat->ckey = key_cv;
+                *stat->ctags = tags_cv;
             }
 	    }
 
@@ -792,22 +909,56 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
             return NGX_CONF_ERROR;
         }
 
-        if (key_cv.lengths == NULL) {
-            s = ngx_http_statsd_key_value(&value[1]);
-            /*if (n < 0) {
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "invalid parameter \"%V\"", &value[2]);
-                return NGX_CONF_ERROR;
-            };*/
-            stat->key = (ngx_str_t) s;
+        if (tags_cv.lengths == NULL) {
+            t = ngx_http_statsd_tags_value(&value[3]);
+            comma = (u_char *) t;
+
+            for (;;) {
+                if (comma != NULL) {
+
+                    if (ngx_strcmp(comma, (u_char *) ",") == 0) {
+                        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Dangling comma at end of tags: \"%V\"", &value[3]);
+                        return NGX_CONF_ERROR;
+                    }
+
+                    nc = 0;
+
+                    for (c = 'A'; c < 'Z' + 1; c++) {
+                        if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c) {
+                            comma = (u_char *) ngx_strchr(comma, c);
+                            nc = 1;
+                            break;
+                        }
+
+                    }
+
+                    if (nc == 0) {
+                        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "First letter of tag must be a letter: \"%V\"", &value[3]);
+                        return NGX_CONF_ERROR;
+                    }
+
+
+                    comma = (u_char *) ngx_strchr(comma, ',');
+
+                } else {
+                    break;
+                }
+            }
+            stat->tags = (ngx_str_t) t;
         } else {
-            stat->ckey = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
-            if (stat->ckey == NULL) {
+            stat->ctags = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
+            if (stat->ctags == NULL) {
                 return NGX_CONF_ERROR;
             }
-            *stat->ckey = key_cv;
+            *stat->ctags = tags_cv;
         }
 
 	}
+
+    if (cf->args->nelts > 5) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Too many parameters: %d", cf->args->nelts);
+        return NGX_CONF_ERROR;
+    }
 
 	return NGX_CONF_OK;
 }
