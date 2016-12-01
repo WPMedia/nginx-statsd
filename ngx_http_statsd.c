@@ -361,7 +361,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 			if (ulcf->sample_rate < 100) {
 				sample_rate = ngx_sprintf(buf, "@0.%02d", ulcf->sample_rate);
 			} else {
-			    sample_rate = "";
+			    sample_rate = (u_char *) "";
 			}
 			if (mtags.data && ulcf->tags.data) {
 			    tags = ngx_sprintf(buf, "%V,%V", mtags, ulcf->tags);
@@ -370,7 +370,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 			} else if (mtags.data && ulcf->tags.data == NULL) {
 			   tags = ngx_sprintf(buf, "%V", mtags);
 			} else {
-			    tags = "";
+			    tags = (u_char *) "";
 			}
 			etc = ngx_sprintf(buf, "%s|%s", sample_rate, tags);
 			p = ngx_snprintf(line, togo, "%V:%d|%s|%s\n", &s, n, metric_type, etc);
@@ -520,7 +520,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	conf->tags = "";
+	conf->tags = (u_char *) "";
 	conf->stats = NULL;
 
     return conf;
@@ -637,10 +637,10 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
      char  *p = conf;
 
-     ngx_str_t        *field, *value, *first;
+     ngx_str_t        *field, *value;
      ngx_conf_post_t  *post;
      ngx_flag_t         nc;
-     u_char             c, *comma, *buf;
+     u_char             c, *comma, *buf, *first;
 
      field = (ngx_str_t *) (p + cmd->offset);
 
@@ -709,10 +709,10 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
     ngx_str_t                   		*value;
 	ngx_statsd_stat_t 					*stat;
 	ngx_int_t							n;
-	ngx_str_t							s, first;
+	ngx_str_t							s;
 	ngx_flag_t							b, nc;
 	ngx_str_t							t;
-	u_char                              c, *comma, buf;
+	u_char                              c, *comma, *buf, *first;
 
     value = cf->args->elts;
 
