@@ -83,7 +83,7 @@ static char *ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
 
 static char *ngx_http_statsd_set_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
-static char *ngx_conf_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static char *ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uint_t type);
 static char *ngx_http_statsd_add_count(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_statsd_add_timing(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -122,7 +122,7 @@ static ngx_command_t  ngx_http_statsd_commands[] = {
 
   { ngx_string("statsd_tags"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-	  ngx_conf_statsd_set_tags,
+	  ngx_http_statsd_set_tags,
 	  NGX_HTTP_LOC_CONF_OFFSET,
 	  offsetof(ngx_http_statsd_conf_t, tags),
 	  NULL },
@@ -362,14 +362,6 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 		} else {
 			metric_type = NULL;
 		}
-
-        "%V:%d|%s%s" + "|@0.%02d" + "|%s" + "\n"
-
-
-        "%V:%d|%s|@0.%02d\n"
-        "%V:%d|%s\n"
-        "%V:%d|%s\n"
-        "%V:%d|%s|@0.%02d|%s\n"
 
 		if (metric_type) {
 			if (ulcf->sample_rate < 100) {
