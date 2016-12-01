@@ -297,7 +297,7 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    startline[STATSD_MAX_STR], *p, *line, *buf, *etc, *tags, *sample_rate;
+    u_char                    startline[STATSD_MAX_STR], *p, *line, buf[STATSD_MAX_STR], *etc, *tags, *sample_rate;
     ssize_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
@@ -641,7 +641,7 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      ngx_str_t        *field, *value;
      ngx_conf_post_t  *post;
      ngx_flag_t         nc;
-     u_char             c, *comma, *buf, *first, *alpha;
+     u_char             c, *comma, buf[1], *first, *alpha;
 
      field = (ngx_str_t *) (p + cmd->offset);
 
@@ -714,7 +714,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 	ngx_str_t							s;
 	ngx_flag_t							b, nc;
 	ngx_str_t							t;
-	u_char                              c, *comma, *buf, *first, *alpha;
+	u_char                              c, *comma, buf[1], *first, *alpha;
 
     value = cf->args->elts;
 
