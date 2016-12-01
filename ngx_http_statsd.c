@@ -520,7 +520,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	conf->tags = NULL;
+	conf->tags = ngx_null_string;
 	conf->stats = NULL;
 
     return conf;
@@ -538,7 +538,7 @@ ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 	ngx_uint_t				sz;
 
 	ngx_conf_merge_ptr_value(conf->endpoint, prev->endpoint, NULL);
-	ngx_conf_merge_ptr_value(conf->tags, prev->tags, NULL);
+	ngx_conf_merge_ptr_value(conf->tags, prev->tags, ngx_null_string);
 	ngx_conf_merge_off_value(conf->off, prev->off, 1);
 	ngx_conf_merge_uint_value(conf->sample_rate, prev->sample_rate, 100);
 
@@ -640,7 +640,7 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      ngx_str_t        *field, *value;
      ngx_conf_post_t  *post;
      ngx_flag_t         nc;
-     u_char             c, *comma, *buf, *first;
+     u_char             c, *comma, *buf, *first, *alpha;
 
      field = (ngx_str_t *) (p + cmd->offset);
 
@@ -664,7 +664,8 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
             for (c = 'A'; c < 'Z' + 1; c++) {
                 first = ngx_sprintf(buf, "%c", comma[1]);
-                if (ngx_strcasecmp(first, (u_char *) c) == 0) {
+                alpha = ngx_sprintf(buf, "%c", c);
+                if (ngx_strcasecmp(first, alpha) == 0) {
                     comma = (u_char *) ngx_strchr(comma, c);
                     nc = 1;
                     break;
@@ -712,7 +713,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 	ngx_str_t							s;
 	ngx_flag_t							b, nc;
 	ngx_str_t							t;
-	u_char                              c, *comma, *buf, *first;
+	u_char                              c, *comma, *buf, *first, *alpha;
 
     value = cf->args->elts;
 
@@ -833,12 +834,12 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 
                         for (c = 'A'; c < 'Z' + 1; c++) {
                             first = ngx_sprintf(buf, "%c", comma[1]);
-                            if (ngx_strcasecmp(first, (u_char *) c) == 0) {
+                            alpha = ngx_sprintf(buf, "%c", c);
+                            if (ngx_strcasecmp(first, alpha) == 0) {
                                 comma = (u_char *) ngx_strchr(comma, c);
                                 nc = 1;
                                 break;
                             }
-
                         }
 
                         if (nc == 0) {
@@ -863,6 +864,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
                 *stat->ctags = tags_cv;
             }
 	    }
+	}
 
 	if (cf->args->nelts == 5) {
         ngx_memzero(&valid_ccv, sizeof(ngx_http_compile_complex_value_t));
@@ -914,12 +916,12 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 
                     for (c = 'A'; c < 'Z' + 1; c++) {
                         first = ngx_sprintf(buf, "%c", comma[1]);
-                        if (ngx_strcasecmp(first, (u_char *) c) == 0) {
+                        alpha = ngx_sprintf(buf, "%c", c);
+                        if (ngx_strcasecmp(first, alpha) == 0) {
                             comma = (u_char *) ngx_strchr(comma, c);
                             nc = 1;
                             break;
                         }
-
                     }
 
                     if (nc == 0) {
