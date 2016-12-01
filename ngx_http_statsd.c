@@ -298,7 +298,7 @@ ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
     u_char                    startline[STATSD_MAX_STR], *p, *line, *buf, *etc, *tags, *sample_rate;
-    size_t                    togo;
+    ssize_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
 	ngx_statsd_stat_t 		 *stats;
@@ -520,7 +520,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	conf->tags = (u_char *) "";
+	conf->tags = NULL;
 	conf->stats = NULL;
 
     return conf;
@@ -538,7 +538,7 @@ ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 	ngx_uint_t				sz;
 
 	ngx_conf_merge_ptr_value(conf->endpoint, prev->endpoint, NULL);
-	ngx_conf_merge_ptr_value(conf->tags, prev->tags, "");
+	ngx_conf_merge_ptr_value(conf->tags, prev->tags, NULL);
 	ngx_conf_merge_off_value(conf->off, prev->off, 1);
 	ngx_conf_merge_uint_value(conf->sample_rate, prev->sample_rate, 100);
 
