@@ -520,7 +520,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	ngx_str_set(conf->tags, NULL);
+	conf->tags = ngx_null_string;
 	conf->stats = NULL;
 
     return conf;
@@ -538,7 +538,7 @@ ngx_http_statsd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 	ngx_uint_t				sz;
 
 	ngx_conf_merge_ptr_value(conf->endpoint, prev->endpoint, NULL);
-	ngx_conf_merge_ptr_value(conf->tags, prev->tags, ngx_null_string);
+	ngx_conf_merge_str_value(conf->tags, prev->tags, "");
 	ngx_conf_merge_off_value(conf->off, prev->off, 1);
 	ngx_conf_merge_uint_value(conf->sample_rate, prev->sample_rate, 100);
 
