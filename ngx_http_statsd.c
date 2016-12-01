@@ -520,7 +520,7 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	conf->tags = ngx_null_string;
+	ngx_str_set(conf->tags, NULL);
 	conf->stats = NULL;
 
     return conf;
@@ -820,7 +820,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
             if (tags_cv.lengths == NULL) {
                 t = ngx_http_statsd_tags_value(&value[3]);
 
-                comma = (u_char *) t;
+                comma = (u_char *) t.data;
 
                 for (;;) {
                     if (comma != NULL) {
@@ -902,7 +902,7 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
 
         if (tags_cv.lengths == NULL) {
             t = ngx_http_statsd_tags_value(&value[3]);
-            comma = (u_char *) t;
+            comma = (u_char *) t.data;
 
             for (;;) {
                 if (comma != NULL) {
