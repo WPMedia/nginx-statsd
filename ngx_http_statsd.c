@@ -520,8 +520,8 @@ ngx_http_statsd_create_loc_conf(ngx_conf_t *cf)
 	conf->endpoint = NGX_CONF_UNSET_PTR;
     conf->off = NGX_CONF_UNSET;
 	conf->sample_rate = NGX_CONF_UNSET_UINT;
-	conf->tags->data = "";
-	conf->tags->len = 0;
+	conf->tags.data = "";
+	conf->tags.len = 0;
 	ngx_s conf->stats;
 
     return conf;
