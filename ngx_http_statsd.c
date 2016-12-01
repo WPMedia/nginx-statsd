@@ -297,7 +297,7 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    startline[STATSD_MAX_STR], *p, *line, *etc, *tags, *sample_rate;
+    u_char                    startline[STATSD_MAX_STR], *p, *line;
     size_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
@@ -305,9 +305,8 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 	ngx_statsd_stat_t		  stat;
 	ngx_uint_t 			      c;
 	ngx_uint_t				  n;
-	ngx_str_t				  s;
+	ngx_str_t				  s, mtags, etc, tags, sample_rate;
 	ngx_flag_t				  b;
-	ngx_str_t				  mtags;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http statsd handler");
@@ -360,7 +359,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 
 		if (metric_type) {
 			if (ulcf->sample_rate < 100) {
-				sample_rate = ngx_snprintf("|@0.%02d\n", ulcf->sample_rate);
+				sample_rate = ngx_snprintf("|@0.%02d", ulcf->sample_rate);
 			} else {
 			    sample_rate = "";
 			}
@@ -638,7 +637,7 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
      char  *p = conf;
 
-     ngx_str_t        *field, *value;
+     ngx_str_t        *field, *value, *first;
      ngx_conf_post_t  *post;
      ngx_flag_t         nc;
      u_char             c, *comma;
@@ -664,12 +663,12 @@ ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             nc = 0;
 
             for (c = 'A'; c < 'Z' + 1; c++) {
-                if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c)) {
+                first = ngx_snprintf("%c", comma[1]);
+                if (ngx_strcasecmp(first, (u_char *) c) == 0) {
                     comma = (u_char *) ngx_strchr(comma, c);
                     nc = 1;
                     break;
                 }
-
             }
 
             if (nc == 0) {
@@ -710,10 +709,10 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
     ngx_str_t                   		*value;
 	ngx_statsd_stat_t 					*stat;
 	ngx_int_t							n;
-	ngx_str_t							s;
+	ngx_str_t							s, first;
 	ngx_flag_t							b, nc;
 	ngx_str_t							t;
-	u_char                              *p, c, *comma;
+	u_char                              c, *comma;
 
     value = cf->args->elts;
 
@@ -833,7 +832,8 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
                         nc = 0;
 
                         for (c = 'A'; c < 'Z' + 1; c++) {
-                            if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c) {
+                            first = ngx_snprintf("%c", comma[1]);
+                            if (ngx_strcasecmp(first, (u_char *) c) == 0) {
                                 comma = (u_char *) ngx_strchr(comma, c);
                                 nc = 1;
                                 break;
@@ -913,7 +913,8 @@ ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uin
                     nc = 0;
 
                     for (c = 'A'; c < 'Z' + 1; c++) {
-                        if (ngx_strcasecmp((u_char *) comma[1], (u_char *) c) {
+                        first = ngx_snprintf("%c", comma[1]);
+                        if (ngx_strcasecmp(first, (u_char *) c) == 0) {
                             comma = (u_char *) ngx_strchr(comma, c);
                             nc = 1;
                             break;
