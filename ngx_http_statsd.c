@@ -297,7 +297,7 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    startline[STATSD_MAX_STR], *p, *line, *buf;
+    u_char                    startline[STATSD_MAX_STR], *p, *line, *buf, *etc, *tags, *sample_rate;
     size_t                    togo;
     const char *              metric_type;
     ngx_http_statsd_conf_t   *ulcf;
@@ -305,7 +305,7 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 	ngx_statsd_stat_t		  stat;
 	ngx_uint_t 			      c;
 	ngx_uint_t				  n;
-	ngx_str_t				  s, mtags, etc, tags, sample_rate;
+	ngx_str_t				  s, mtags;
 	ngx_flag_t				  b;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -363,11 +363,11 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 			} else {
 			    sample_rate = "";
 			}
-			if (mtags && ulcf->tags) {
+			if (mtags.data && ulcf->tags.data) {
 			    tags = ngx_sprintf(buf, "%V,%V", mtags, ulcf->tags);
-			} else if (!mtags && ulcf->tags) {
+			} else if (mtags.data == NULL && ulcf->tags.data) {
 			    tags = ngx_sprintf(buf, "#%V", ulcf->tags);
-			} else if (mtags && !ulcf->tags) {
+			} else if (mtags.data && ulcf->tags.data == NULL) {
 			   tags = ngx_sprintf(buf, "%V", mtags);
 			} else {
 			    tags = "";
