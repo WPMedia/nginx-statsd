@@ -119,7 +119,7 @@ static ngx_command_t  ngx_http_statsd_commands[] = {
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
 	  ngx_http_statsd_set_tags,
 	  NGX_HTTP_LOC_CONF_OFFSET,
-	  offsetof(ngx_http_statsd_conf_t, tags),
+	  0,
 	  NULL },
 
 	{ ngx_string("statsd_count"),
