@@ -117,9 +117,9 @@ static ngx_command_t  ngx_http_statsd_commands[] = {
 
   { ngx_string("statsd_tags"),
 	  NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
-	  ngx_http_statsd_set_tags,
+	  ngx_conf_set_str_slot,
 	  NGX_HTTP_LOC_CONF_OFFSET,
-	  0,
+	  offsetof(ngx_http_statsd_conf_t, tags),
 	  NULL },
 
 	{ ngx_string("statsd_count"),
@@ -632,70 +632,70 @@ ngx_http_statsd_set_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
-static char *
-ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-
-     char  *p = conf;
-
-     ngx_str_t        *field, *value;
-     ngx_conf_post_t  *post;
-     ngx_flag_t         nc;
-     u_char             c, *comma, buf[1], *first, *alpha;
-
-     field = (ngx_str_t *) (p + cmd->offset);
-
-    if (field->data) {
-         return "is duplicate";
-     }
-
-    value = cf->args->elts;
-
-    comma = value[1].data;
-
-    for (;;) {
-        if (comma != NULL) {
-
-            if (ngx_strcmp(comma, (u_char *) ",") == 0) {
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Dangling comma at end of tags: \"%V\"", value[1].data);
-                return NGX_CONF_ERROR;
-            }
-
-            nc = 0;
-
-            for (c = 'A'; c < 'Z' + 1; c++) {
-                first = ngx_sprintf(buf, "%c", comma[1]);
-                alpha = ngx_sprintf(buf, "%c", c);
-                if (ngx_strcasecmp(first, alpha) == 0) {
-                    comma = (u_char *) ngx_strchr(comma, c);
-                    nc = 1;
-                    break;
-                }
-            }
-
-            if (nc == 0) {
-                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "First letter of tag must be a letter: \"%V\"", value[1].data);
-                return NGX_CONF_ERROR;
-            }
-
-
-            comma = (u_char *) ngx_strchr(comma, ',');
-
-        } else {
-            break;
-        }
-    }
-
-     *field = value[1];
-
-     if (cmd->post) {
-         post = cmd->post;
-         return post->post_handler(cf, post, field);
-    }
-
-     return NGX_CONF_OK;
-
-}
+//static char *
+//ngx_http_statsd_set_tags(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+//{
+//
+//     char  *p = conf;
+//
+//     ngx_str_t        *field, *value;
+//     ngx_conf_post_t  *post;
+//     ngx_flag_t         nc;
+//     u_char             c, *comma, buf[1], *first, *alpha;
+//
+//     field = (ngx_str_t *) (p + cmd->offset);
+//
+//    if (field->data) {
+//         return "is duplicate";
+//     }
+//
+//    value = cf->args->elts;
+//
+//    comma = value[1].data;
+//
+//    for (;;) {
+//        if (comma != NULL) {
+//
+//            if (ngx_strcmp(comma, (u_char *) ",") == 0) {
+//                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "Dangling comma at end of tags: \"%V\"", value[1].data);
+//                return NGX_CONF_ERROR;
+//            }
+//
+//            nc = 0;
+//
+//            for (c = 'A'; c < 'Z' + 1; c++) {
+//                first = ngx_sprintf(buf, "%c", comma[1]);
+//                alpha = ngx_sprintf(buf, "%c", c);
+//                if (ngx_strcasecmp(first, alpha) == 0) {
+//                    comma = (u_char *) ngx_strchr(comma, c);
+//                    nc = 1;
+//                    break;
+//                }
+//            }
+//
+//            if (nc == 0) {
+//                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "First letter of tag must be a letter: \"%V\"", value[1].data);
+//                return NGX_CONF_ERROR;
+//            }
+//
+//
+//            comma = (u_char *) ngx_strchr(comma, ',');
+//
+//        } else {
+//            break;
+//        }
+//    }
+//
+//     *field = value[1];
+//
+//     if (cmd->post) {
+//         post = cmd->post;
+//         return post->post_handler(cf, post, field);
+//    }
+//
+//     return NGX_CONF_OK;
+//
+//}
 
 static char *
 ngx_http_statsd_add_stat(ngx_conf_t *cf, ngx_command_t *cmd, void *conf, ngx_uint_t type) {
