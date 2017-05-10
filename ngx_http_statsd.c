@@ -235,8 +235,8 @@ ngx_http_statsd_valid_value(ngx_str_t *value)
 ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
-    u_char                    line[STATSD_MAX_STR], *p, *t;
-    const char *              metric_type;
+    u_char                    line[STATSD_MAX_STR], *p;
+    const char *              metric_type, *t;
     ngx_http_statsd_conf_t   *ulcf;
 	ngx_statsd_stat_t 		 *stats;
 	ngx_statsd_stat_t		  stat;
