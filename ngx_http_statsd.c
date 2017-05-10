@@ -82,7 +82,7 @@ static ngx_uint_t ngx_http_statsd_metric_value(ngx_str_t *str);
 static ngx_flag_t ngx_http_statsd_valid_get_value(ngx_http_request_t *r, ngx_http_complex_value_t *cv, ngx_flag_t v);
 static ngx_flag_t ngx_http_statsd_valid_value(ngx_str_t *str);
 
-uintptr_t ngx_escape_statsd_key(u_char *dst, u_char *src, size_t size);
+uintptr_t ngx_escape_statsd_key(u_char *dst, u_char *src, size_t size, uint mask);
 
 static ngx_int_t ngx_http_statsd_init(ngx_conf_t *cf);
 
@@ -236,16 +236,14 @@ ngx_int_t
 ngx_http_statsd_handler(ngx_http_request_t *r)
 {
     u_char                    line[STATSD_MAX_STR], *p;
-    const char *              metric_type, *t;
+    const char *              metric_type, *h;
     ngx_http_statsd_conf_t   *ulcf;
 	ngx_statsd_stat_t 		 *stats;
 	ngx_statsd_stat_t		  stat;
 	ngx_uint_t 			      c;
 	ngx_uint_t				  n;
-	ngx_str_t				  s;
+	ngx_str_t				  s, t;
 	ngx_flag_t				  b;
-
-  t = "test:abc";
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http statsd handler");
@@ -268,7 +266,19 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 
 		stat = stats[c];
 		s = ngx_http_statsd_key_get_value(r, stat.ckey, stat.key);
-		ngx_escape_statsd_key(s.data, s.data, s.len);
+    h = ngx_strchr(s.data, '#');
+    if (h) {
+      size_t keyLength = (size_t)h - (size_t)s.data;
+
+      t.data = (u_char *)(h + 1);
+      t.len = s.len - keyLength - 1;
+      ngx_escape_statsd_key(t.data, t.data, t.len, 1);
+
+      s.len = keyLength;
+      ngx_escape_statsd_key(s.data, s.data, s.len, 0);
+    } else {
+      ngx_escape_statsd_key(s.data, s.data, s.len, 0);
+    }
 
 		n = ngx_http_statsd_metric_get_value(r, stat.cmetric, stat.metric);
 		b = ngx_http_statsd_valid_get_value(r, stat.cvalid, stat.valid);
@@ -288,18 +298,18 @@ ngx_http_statsd_handler(ngx_http_request_t *r)
 		}
 
 		if (metric_type) {
-      if (t) {
-  			if (ulcf->sample_rate < 100) {
-  				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|@0.%02d|#%s", &s, n, metric_type, ulcf->sample_rate, t);
-  			} else {
-  				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|#%s", &s, n, metric_type, t);
-  			}
+			if (ulcf->sample_rate < 100) {
+        if (t.len == 0) {
+          p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|@0.%02d", &s, n, metric_type, ulcf->sample_rate);
+        } else {
+  				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|@0.%02d|#%V", &s, n, metric_type, ulcf->sample_rate, &t);
+        }
       } else {
-        if (ulcf->sample_rate < 100) {
-  				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|@0.%02d", &s, n, metric_type, ulcf->sample_rate);
-  			} else {
-  				p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s", &s, n, metric_type);
-  			}
+        if (t.len == 0) {
+          p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s", &s, n, metric_type);
+        } else {
+          p = ngx_snprintf(line, STATSD_MAX_STR, "%V:%d|%s|#%V", &s, n, metric_type, &t);
+        }
       }
 			ngx_http_statsd_udp_send(ulcf->endpoint, line, p - line);
 		}
@@ -697,7 +707,7 @@ ngx_http_statsd_init(ngx_conf_t *cf)
 }
 
 uintptr_t
-ngx_escape_statsd_key(u_char *dst, u_char *src, size_t size)
+ngx_escape_statsd_key(u_char *dst, u_char *src, size_t size, uint mask)
 {
     ngx_uint_t      n;
     uint32_t       *escape;
@@ -722,11 +732,29 @@ ngx_escape_statsd_key(u_char *dst, u_char *src, size_t size)
         0xffffffff  /* 1111 1111 1111 1111  1111 1111 1111 1111 */
     };
 
+    static uint32_t   statsd_tag[] = {
+        0xffffffff, /* 1111 1111 1111 1111  1111 1111 1111 1111 */
+
+                    /* ?>=< ;:98 7654 3210  /.-, +*)( '&%$ #"!  */
+		0xf800afff, /* 1111 1000 0000 0000  1010 1111 1111 1111 */
+
+                    /* _^]\ [ZYX WVUT SRQP  ONML KJIH GFED CBA@ */
+		0x78000001, /* 0111 1000 0000 0000  0000 0000 0000 0001 */
+
+                    /*  ~}| {zyx wvut srqp  onml kjih gfed cba` */
+		0xf8000001, /* 1111 1000 0000 0000  0000 0000 0000 0001 */
+
+        0xffffffff, /* 1111 1111 1111 1111  1111 1111 1111 1111 */
+        0xffffffff, /* 1111 1111 1111 1111  1111 1111 1111 1111 */
+        0xffffffff, /* 1111 1111 1111 1111  1111 1111 1111 1111 */
+        0xffffffff  /* 1111 1111 1111 1111  1111 1111 1111 1111 */
+    };
+
     static uint32_t  *map[] =
-        { statsd_key };
+        { statsd_key, statsd_tag };
 
 
-    escape = map[0];
+    escape = map[mask];
 
     if (dst == NULL) {
 
