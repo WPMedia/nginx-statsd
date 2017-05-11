@@ -9,7 +9,7 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositori
             make \
             wget
 
-ARG NGINX_VERSION=1.11.13
+ARG NGINX_VERSION=1.11.10
 
 # download nginx src
 RUN \
