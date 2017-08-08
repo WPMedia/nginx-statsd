@@ -7,6 +7,7 @@ RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositori
     apk add --update \
             g++ \
             make \
+            openssl-dev \
             wget
 
 ARG NGINX_VERSION=1.11.10
